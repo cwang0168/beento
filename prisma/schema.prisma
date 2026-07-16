@@ -195,3 +195,21 @@ model Report {
   status         ReportStatus @default(open)
   createdAt      DateTime     @default(now())
 }
+
+// Phase 3
+model UserSimilarityCache {
+  userId       String
+  similarUserId String
+  score        Float
+  computedAt   DateTime @default(now())
+
+  @@id([userId, similarUserId])
+}
+
+model TripSuggestionDismissal {
+  userId           String
+  clusterSignature String
+  dismissedAt      DateTime @default(now())
+
+  @@id([userId, clusterSignature])
+}

@@ -3,6 +3,8 @@ import { prisma } from '../prisma';
 // Deletes rows in FK-safe order. Used by integration tests to isolate cases
 // against the same local Postgres instance (docker-compose), not a mock.
 export async function resetDatabase(): Promise<void> {
+  await prisma.userSimilarityCache.deleteMany();
+  await prisma.tripSuggestionDismissal.deleteMany();
   await prisma.report.deleteMany();
   await prisma.connectionRequestRateLimit.deleteMany();
   await prisma.tripCoTraveler.deleteMany();

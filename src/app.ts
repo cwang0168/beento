@@ -10,6 +10,8 @@ import { peopleRouter } from './modules/people/people.routes';
 import { placesRouter } from './modules/places/places.routes';
 import { preferencesRouter } from './modules/preferences/preferences.routes';
 import { profileRouter } from './modules/profile/profile.routes';
+import { recommendationsRouter } from './modules/recommendations/recommendations.routes';
+import { tripSuggestionsRouter } from './modules/recommendations/tripSuggestions.routes';
 import { reportsRouter } from './modules/reports/reports.routes';
 import { savesRouter } from './modules/saves/saves.routes';
 import { tripsRouter } from './modules/trips/trips.routes';
@@ -30,6 +32,9 @@ export function createApp(): Express {
   app.use('/places', placesRouter);
   app.use('/logs', logsRouter);
   app.use('/saves', savesRouter);
+  // Must be registered before /trips -- otherwise tripsRouter's /:id route
+  // would swallow /trips/suggestions, treating "suggestions" as a trip id.
+  app.use('/trips/suggestions', tripSuggestionsRouter);
   app.use('/trips', tripsRouter);
   app.use('/map', mapRouter);
   app.use('/library', libraryRouter);
@@ -38,6 +43,7 @@ export function createApp(): Express {
   app.use('/reports', reportsRouter);
   app.use('/people', peopleRouter);
   app.use('/users', usersRouter);
+  app.use('/recommendations', recommendationsRouter);
 
   return app;
 }
