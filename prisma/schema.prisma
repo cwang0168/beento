@@ -80,6 +80,10 @@ model Log {
   user         User     @relation(fields: [userId], references: [id])
   userId       String
   rankPosition Int?
+  // Binary-insertion bounds while a comparison is in progress (null once
+  // rankPosition is resolved, or for the first log in a category).
+  rankLow      Int?
+  rankHigh     Int?
   loggedAt     DateTime @default(now())
 
   @@unique([placeId, userId])

@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express, { Express } from 'express';
 import { authRouter } from './modules/auth/auth.routes';
+import { logsRouter } from './modules/logs/logs.routes';
 import { placesRouter } from './modules/places/places.routes';
 import { preferencesRouter } from './modules/preferences/preferences.routes';
 
@@ -16,6 +17,7 @@ export function createApp(): Express {
   app.use('/auth', authRouter);
   app.use('/me/preferences', preferencesRouter);
   app.use('/places', placesRouter);
+  app.use('/logs', logsRouter);
 
   return app;
 }

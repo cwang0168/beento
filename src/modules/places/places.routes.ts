@@ -2,9 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { AuthedRequest, requireAuth } from '../../middleware/auth';
 import { prisma } from '../../prisma';
+import { categoryEnum } from '../../shared/categories';
 import { haversineDistanceKm } from './places.service';
-
-const categoryEnum = z.enum(['restaurant', 'hotel', 'bar', 'activity']);
 
 const createPlaceSchema = z.object({
   name: z.string().min(1),
