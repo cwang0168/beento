@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PlaceCategory {
+  restaurant
+  hotel
+  bar
+  activity
+}
+
+enum PlaceSource {
+  user_created
+  seed
+}
+
+enum TripCoTravelerInviteStatus {
+  pending
+  accepted
+}
+
+enum ConnectionStatus {
+  pending
+  accepted
+}
+
+// Phase 1
+model User {
+  id                  String   @id @default(uuid())
+  email               String   @unique
+  passwordHash        String
+  displayName         String
+  username            String   @unique
+  profilePublic       Boolean  @default(false)
+  prefBudgetLevel     String?
+  prefPace            String?
+  prefEnvironmentType String?
+  createdAt           DateTime @default(now())
+
+  createdPlaces       Place[]          @relation("PlaceCreatedBy")
+  logs                Log[]
+  saves               Save[]
+  trips               Trip[]           @relation("TripOwner")
+  tripCoTravelerLinks TripCoTraveler[]
+
+  connectionsRequested Connection[] @relation("ConnectionRequester")
+  connectionsReceived  Connection[] @relation("ConnectionAddressee")
+
+  blocksMade     Block[] @relation("BlockBlocker")
+  blocksReceived Block[] @relation("BlockBlocked")
+}
+
+// unit of ranking and trip membership; global, no privacy state
+model Place {
+  id          String        @id @default(uuid())
+  name        String
+  category    PlaceCategory
+  lat         Float
+  lng         Float
+  source      PlaceSource
+  createdBy   User?         @relation("PlaceCreatedBy", fields: [createdById], references: [id])
+  createdById String?
+  createdAt   DateTime      @default(now())
+
+  logs       Log[]
+  saves      Save[]
+  tripPlaces TripPlace[]
+}
+
+// "visited"
+model Log {
+  id           String   @id @default(uuid())
+  place        Place    @relation(fields: [placeId], references: [id])
+  placeId      String
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String
+  rankPosition Int?
+  loggedAt     DateTime @default(now())
+
+  @@unique([placeId, userId])
+}
+
+// "want to go"; never deleted on Log creation (FR-9a)
+model Save {
+  id      String   @id @default(uuid())
+  place   Place    @relation(fields: [placeId], references: [id])
+  placeId String
+  user    User     @relation(fields: [userId], references: [id])
+  userId  String
+  savedAt DateTime @default(now())
+
+  @@unique([placeId, userId])
+}
+
+model Trip {
+  id        String   @id @default(uuid())
+  owner     User     @relation("TripOwner", fields: [ownerId], references: [id])
+  ownerId   String
+  title     String
+  startDate DateTime
+  endDate   DateTime
+  createdAt DateTime @default(now())
+
+  tripPlaces  TripPlace[]
+  coTravelers TripCoTraveler[]
+}
+
+// join table, many-to-many; deleting a row never touches Log/Save (FR-22)
+model TripPlace {
+  trip    Trip   @relation(fields: [tripId], references: [id])
+  tripId  String
+  place   Place  @relation(fields: [placeId], references: [id])
+  placeId String
+
+  @@id([tripId, placeId])
+}
+
+// created now, exercised in Phase 2
+model TripCoTraveler {
+  id           String                     @id @default(uuid())
+  trip         Trip                       @relation(fields: [tripId], references: [id])
+  tripId       String
+  user         User?                      @relation(fields: [userId], references: [id])
+  userId       String?
+  invitedEmail String?
+  inviteStatus TripCoTravelerInviteStatus @default(pending)
+
+  @@unique([tripId, userId])
+  @@unique([tripId, invitedEmail])
+}
+
+// created now, exercised in Phase 2
+model Connection {
+  id          String           @id @default(uuid())
+  requester   User             @relation("ConnectionRequester", fields: [requesterId], references: [id])
+  requesterId String
+  addressee   User             @relation("ConnectionAddressee", fields: [addresseeId], references: [id])
+  addresseeId String
+  status      ConnectionStatus @default(pending)
+  createdAt   DateTime         @default(now())
+
+  @@unique([requesterId, addresseeId])
+}
+
+// created now, exercised in Phase 2
+model Block {
+  blocker   User     @relation("BlockBlocker", fields: [blockerId], references: [id])
+  blockerId String
+  blocked   User     @relation("BlockBlocked", fields: [blockedId], references: [id])
+  blockedId String
+  createdAt DateTime @default(now())
+
+  @@id([blockerId, blockedId])
+}

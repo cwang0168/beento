@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: beento
+      POSTGRES_PASSWORD: beento
+      POSTGRES_DB: beento
+    ports:
+      - "5432:5432"
+    volumes:
+      - beento_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  beento_postgres_data:
