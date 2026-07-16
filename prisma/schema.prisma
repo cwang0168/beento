@@ -29,6 +29,18 @@ enum ConnectionStatus {
   accepted
 }
 
+enum ReportReason {
+  harassment
+  spam
+  impersonation
+  other
+}
+
+enum ReportStatus {
+  open
+  reviewed
+}
+
 // Phase 1
 model User {
   id                  String   @id @default(uuid())
@@ -53,6 +65,9 @@ model User {
 
   blocksMade     Block[] @relation("BlockBlocker")
   blocksReceived Block[] @relation("BlockBlocked")
+
+  reportsMade     Report[] @relation("ReportReporter")
+  reportsReceived Report[] @relation("ReportReported")
 }
 
 // unit of ranking and trip membership; global, no privacy state
@@ -160,4 +175,23 @@ model Block {
   createdAt DateTime @default(now())
 
   @@id([blockerId, blockedId])
+}
+
+// Phase 2
+model ConnectionRequestRateLimit {
+  requesterId  String   @id
+  windowStart  DateTime
+  requestCount Int      @default(0)
+}
+
+model Report {
+  id             String       @id @default(uuid())
+  reporter       User         @relation("ReportReporter", fields: [reporterId], references: [id])
+  reporterId     String
+  reportedUser   User         @relation("ReportReported", fields: [reportedUserId], references: [id])
+  reportedUserId String
+  reason         ReportReason
+  note           String?
+  status         ReportStatus @default(open)
+  createdAt      DateTime     @default(now())
 }

@@ -156,3 +156,137 @@ describe('post-trip prompt (FR-33, owner-only slice)', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('co-travelers (FR-24)', () => {
+  it('is accepted immediately if the tagged user is already connected', async () => {
+    const owner = await createTestUser(app);
+    const friend = await createTestUser(app);
+    const friendUser = await prisma.user.findUniqueOrThrow({ where: { username: friend.username } });
+    const connReq = await request(app)
+      .post('/connections')
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({ addressee_id: friendUser.id });
+    await request(app).post(`/connections/${connReq.body.id}/accept`).set('Authorization', `Bearer ${friend.token}`);
+
+    const trip = await createTrip(owner.token);
+    const res = await request(app)
+      .post(`/trips/${trip.id}/co-travelers`)
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({ user_id: friendUser.id });
+    expect(res.status).toBe(201);
+    expect(res.body.invite_status).toBe('accepted');
+  });
+
+  it('is pending if the tagged user is not connected, and grants trip access once accepted', async () => {
+    const owner = await createTestUser(app);
+    const stranger = await createTestUser(app);
+    const strangerUser = await prisma.user.findUniqueOrThrow({ where: { username: stranger.username } });
+    const trip = await createTrip(owner.token);
+
+    const tag = await request(app)
+      .post(`/trips/${trip.id}/co-travelers`)
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({ user_id: strangerUser.id });
+    expect(tag.body.invite_status).toBe('pending');
+
+    const deniedAccess = await request(app).get(`/trips/${trip.id}`).set('Authorization', `Bearer ${stranger.token}`);
+    expect(deniedAccess.status).toBe(404);
+
+    await prisma.tripCoTraveler.update({ where: { id: tag.body.id }, data: { inviteStatus: 'accepted' } });
+    const grantedAccess = await request(app).get(`/trips/${trip.id}`).set('Authorization', `Bearer ${stranger.token}`);
+    expect(grantedAccess.status).toBe(200);
+  });
+
+  it('supports an invited_email for a non-user', async () => {
+    const owner = await createTestUser(app);
+    const trip = await createTrip(owner.token);
+    const res = await request(app)
+      .post(`/trips/${trip.id}/co-travelers`)
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({ invited_email: 'friend@example.com' });
+    expect(res.status).toBe(201);
+    expect(res.body.invite_status).toBe('pending');
+  });
+});
+
+describe('GET /trips/:id/comparison (FR-25)', () => {
+  it('shows each accepted co-traveler ranking plus the group average', async () => {
+    const owner = await createTestUser(app);
+    const friend = await createTestUser(app);
+    const friendUser = await prisma.user.findUniqueOrThrow({ where: { username: friend.username } });
+    const connReq = await request(app)
+      .post('/connections')
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({ addressee_id: friendUser.id });
+    await request(app).post(`/connections/${connReq.body.id}/accept`).set('Authorization', `Bearer ${friend.token}`);
+
+    const trip = await createTrip(owner.token);
+    await request(app)
+      .post(`/trips/${trip.id}/co-travelers`)
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({ user_id: friendUser.id });
+
+    const place = await createPlace(owner.token, 'Time Out Market');
+    await request(app).post(`/trips/${trip.id}/places`).set('Authorization', `Bearer ${owner.token}`).send({ place_id: place });
+    await request(app).post('/logs').set('Authorization', `Bearer ${owner.token}`).send({ place_id: place });
+    await request(app).post('/logs').set('Authorization', `Bearer ${friend.token}`).send({ place_id: place });
+
+    const res = await request(app).get(`/trips/${trip.id}/comparison`).set('Authorization', `Bearer ${owner.token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.places).toHaveLength(1);
+    expect(res.body.places[0].rankings).toHaveLength(2);
+    expect(res.body.places[0].group_average).toBe(1);
+  });
+});
+
+describe('POST /trips/:id/share (FR-13)', () => {
+  it('returns only connection_ids that are real accepted connections of the sharer', async () => {
+    const owner = await createTestUser(app);
+    const friend = await createTestUser(app);
+    const friendUser = await prisma.user.findUniqueOrThrow({ where: { username: friend.username } });
+    const connReq = await request(app)
+      .post('/connections')
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({ addressee_id: friendUser.id });
+    await request(app).post(`/connections/${connReq.body.id}/accept`).set('Authorization', `Bearer ${friend.token}`);
+
+    const trip = await createTrip(owner.token);
+    const res = await request(app)
+      .post(`/trips/${trip.id}/share`)
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({ connection_ids: [connReq.body.id, 'not-a-real-connection'] });
+    expect(res.body.shared_with_connection_ids).toEqual([connReq.body.id]);
+  });
+});
+
+describe('POST /trips/:id/prompt/notify (FR-33 remainder)', () => {
+  it('notifies each accepted, account-holding co-traveler with unlogged places', async () => {
+    const owner = await createTestUser(app);
+    const friend = await createTestUser(app);
+    const friendUser = await prisma.user.findUniqueOrThrow({ where: { username: friend.username } });
+
+    const trip = await createTrip(owner.token, { start_date: '2020-01-01', end_date: '2020-01-05' });
+    await prisma.tripCoTraveler.create({
+      data: { tripId: trip.id, userId: friendUser.id, inviteStatus: 'accepted' },
+    });
+    const place = await createPlace(owner.token, 'Time Out Market');
+    await request(app).post(`/trips/${trip.id}/places`).set('Authorization', `Bearer ${owner.token}`).send({ place_id: place });
+
+    const res = await request(app).post(`/trips/${trip.id}/prompt/notify`);
+    expect(res.status).toBe(200);
+    expect(res.body.notified).toEqual([{ user_id: friendUser.id, pending_place_count: 1 }]);
+  });
+
+  it('does not notify a lapsed (never-accepted) invitee', async () => {
+    const owner = await createTestUser(app);
+    const trip = await createTrip(owner.token, { start_date: '2020-01-01', end_date: '2020-01-05' });
+    await prisma.tripCoTraveler.create({
+      data: { tripId: trip.id, invitedEmail: 'lapsed@example.com', inviteStatus: 'pending' },
+    });
+    const place = await createPlace(owner.token, 'Time Out Market');
+    await request(app).post(`/trips/${trip.id}/places`).set('Authorization', `Bearer ${owner.token}`).send({ place_id: place });
+
+    const res = await request(app).post(`/trips/${trip.id}/prompt/notify`);
+    expect(res.body.notified).toEqual([]);
+  });
+});

@@ -77,11 +77,11 @@ describe('GET /map/places', () => {
     expect(visited.body).toHaveLength(1);
   });
 
-  it('rejects an owner value other than mine (Phase 2 territory)', async () => {
+  it('rejects an unrecognized owner value', async () => {
     const { token } = await createTestUser(app);
     const res = await request(app)
       .get('/map/places')
-      .query({ bbox: LISBON_BBOX, owner: 'everyone' })
+      .query({ bbox: LISBON_BBOX, owner: 'not-a-real-owner-filter' })
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(400);
   });
@@ -100,5 +100,67 @@ describe('GET /map/places', () => {
 
     const res = await request(app).get('/map/places').query({ bbox: LISBON_BBOX }).set('Authorization', `Bearer ${token}`);
     expect(res.body.some((entry: { type: string }) => entry.type === 'cluster')).toBe(true);
+  });
+
+  it('owner=everyone includes an accepted connection\'s logs alongside the viewer\'s own', async () => {
+    const viewer = await createTestUser(app);
+    const friend = await createTestUser(app);
+    const friendUser = await prisma.user.findUniqueOrThrow({ where: { username: friend.username } });
+    const connReq = await request(app)
+      .post('/connections')
+      .set('Authorization', `Bearer ${viewer.token}`)
+      .send({ addressee_id: friendUser.id });
+    await request(app).post(`/connections/${connReq.body.id}/accept`).set('Authorization', `Bearer ${friend.token}`);
+
+    const place = await prisma.place.create({
+      data: { name: 'Time Out Market', category: 'restaurant', lat: 38.7069, lng: -9.1459, source: 'seed' },
+    });
+    await request(app).post('/logs').set('Authorization', `Bearer ${friend.token}`).send({ place_id: place.id });
+
+    const mine = await request(app)
+      .get('/map/places')
+      .query({ bbox: LISBON_BBOX, owner: 'mine' })
+      .set('Authorization', `Bearer ${viewer.token}`);
+    expect(mine.body[0].status).toBe('none');
+
+    const everyone = await request(app)
+      .get('/map/places')
+      .query({ bbox: LISBON_BBOX, owner: 'everyone' })
+      .set('Authorization', `Bearer ${viewer.token}`);
+    expect(everyone.body[0].status).toBe('visited');
+  });
+
+  it('owner=connection:<id> 403s without permission', async () => {
+    const viewer = await createTestUser(app);
+    const stranger = await createTestUser(app);
+    const strangerUser = await prisma.user.findUniqueOrThrow({ where: { username: stranger.username } });
+
+    const res = await request(app)
+      .get('/map/places')
+      .query({ bbox: LISBON_BBOX, owner: `connection:${strangerUser.id}` })
+      .set('Authorization', `Bearer ${viewer.token}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('owner=connection:<id> shows only that connection\'s status', async () => {
+    const viewer = await createTestUser(app);
+    const friend = await createTestUser(app);
+    const friendUser = await prisma.user.findUniqueOrThrow({ where: { username: friend.username } });
+    const connReq = await request(app)
+      .post('/connections')
+      .set('Authorization', `Bearer ${viewer.token}`)
+      .send({ addressee_id: friendUser.id });
+    await request(app).post(`/connections/${connReq.body.id}/accept`).set('Authorization', `Bearer ${friend.token}`);
+
+    const place = await prisma.place.create({
+      data: { name: 'Time Out Market', category: 'restaurant', lat: 38.7069, lng: -9.1459, source: 'seed' },
+    });
+    await request(app).post('/logs').set('Authorization', `Bearer ${friend.token}`).send({ place_id: place.id });
+
+    const res = await request(app)
+      .get('/map/places')
+      .query({ bbox: LISBON_BBOX, owner: `connection:${friendUser.id}` })
+      .set('Authorization', `Bearer ${viewer.token}`);
+    expect(res.body[0].status).toBe('visited');
   });
 });
