@@ -239,8 +239,8 @@ describe('GET /trips/:id/comparison (FR-25)', () => {
   });
 });
 
-describe('POST /trips/:id/share (FR-13)', () => {
-  it('returns only connection_ids that are real accepted connections of the sharer', async () => {
+describe('GET /trips includes co-traveler trips', () => {
+  it('lists owned trips with role owner and co-traveler trips with role co_traveler', async () => {
     const owner = await createTestUser(app);
     const friend = await createTestUser(app);
     const friendUser = await prisma.user.findUniqueOrThrow({ where: { username: friend.username } });
@@ -251,11 +251,30 @@ describe('POST /trips/:id/share (FR-13)', () => {
     await request(app).post(`/connections/${connReq.body.id}/accept`).set('Authorization', `Bearer ${friend.token}`);
 
     const trip = await createTrip(owner.token);
-    const res = await request(app)
-      .post(`/trips/${trip.id}/share`)
+    await request(app)
+      .post(`/trips/${trip.id}/co-travelers`)
       .set('Authorization', `Bearer ${owner.token}`)
-      .send({ connection_ids: [connReq.body.id, 'not-a-real-connection'] });
-    expect(res.body.shared_with_connection_ids).toEqual([connReq.body.id]);
+      .send({ user_id: friendUser.id });
+
+    const ownerList = await request(app).get('/trips').set('Authorization', `Bearer ${owner.token}`);
+    expect(ownerList.body).toEqual([expect.objectContaining({ id: trip.id, role: 'owner' })]);
+
+    const friendList = await request(app).get('/trips').set('Authorization', `Bearer ${friend.token}`);
+    expect(friendList.body).toEqual([expect.objectContaining({ id: trip.id, role: 'co_traveler' })]);
+  });
+
+  it('does not list a trip for a pending (not yet accepted) co-traveler', async () => {
+    const owner = await createTestUser(app);
+    const stranger = await createTestUser(app);
+    const strangerUser = await prisma.user.findUniqueOrThrow({ where: { username: stranger.username } });
+    const trip = await createTrip(owner.token);
+    await request(app)
+      .post(`/trips/${trip.id}/co-travelers`)
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({ user_id: strangerUser.id });
+
+    const strangerList = await request(app).get('/trips').set('Authorization', `Bearer ${stranger.token}`);
+    expect(strangerList.body).toEqual([]);
   });
 });
 

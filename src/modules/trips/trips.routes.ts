@@ -61,14 +61,30 @@ tripsRouter.post('/', requireAuth, async (req: AuthedRequest, res) => {
   res.status(201).json({ id: trip.id, title: trip.title, start_date: trip.startDate, end_date: trip.endDate });
 });
 
-// Owned trips only -- a co-traveler's shared trips don't show up in their
-// own "My Trips" list, only via the share/comparison flow (Phase 2 scope).
+// Owned trips plus trips the viewer is an accepted co-traveler on --
+// tagging someone as a co-traveler (FR-24) is what makes a trip visible to
+// them at all, so it has to show up in their own trip list, not just be
+// reachable by a direct link.
 tripsRouter.get('/', requireAuth, async (req: AuthedRequest, res) => {
-  const trips = await prisma.trip.findMany({
-    where: { ownerId: req.userId },
-    orderBy: { startDate: 'desc' },
-  });
-  res.json(trips.map((trip) => ({ id: trip.id, title: trip.title, start_date: trip.startDate, end_date: trip.endDate })));
+  const userId = req.userId!;
+  const [owned, coTraveling] = await Promise.all([
+    prisma.trip.findMany({ where: { ownerId: userId }, orderBy: { startDate: 'desc' } }),
+    prisma.trip.findMany({
+      where: { coTravelers: { some: { userId, inviteStatus: 'accepted' } } },
+      orderBy: { startDate: 'desc' },
+    }),
+  ]);
+
+  res.json([
+    ...owned.map((trip) => ({ id: trip.id, title: trip.title, start_date: trip.startDate, end_date: trip.endDate, role: 'owner' })),
+    ...coTraveling.map((trip) => ({
+      id: trip.id,
+      title: trip.title,
+      start_date: trip.startDate,
+      end_date: trip.endDate,
+      role: 'co_traveler',
+    })),
+  ]);
 });
 
 // Places + the viewer's own Log/Save status per Place, plus which
@@ -312,29 +328,6 @@ tripsRouter.get('/:id/comparison', requireAuth, async (req: AuthedRequest, res) 
   }
 
   res.json({ trip_id: trip.id, places });
-});
-
-// FR-13: a UX convenience, not a permission grant -- the recipient's actual
-// view still runs entirely through canView (see permissions.service).
-tripsRouter.post('/:id/share', requireAuth, async (req: AuthedRequest, res) => {
-  const trip = await loadOwnedTrip(req.params.id, req.userId!);
-  if (!trip) {
-    res.status(404).json({ error: 'Trip not found' });
-    return;
-  }
-  const parsed = z.object({ connection_ids: z.array(z.string()) }).safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
-    return;
-  }
-  const validConnections = await prisma.connection.findMany({
-    where: {
-      id: { in: parsed.data.connection_ids },
-      status: 'accepted',
-      OR: [{ requesterId: req.userId }, { addresseeId: req.userId }],
-    },
-  });
-  res.json({ trip_id: trip.id, shared_with_connection_ids: validConnections.map((c) => c.id) });
 });
 
 // FR-33 remainder: internal/cron-triggered fan-out. Finds each
