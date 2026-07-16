@@ -2,8 +2,13 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { AuthedRequest, requireAuth } from '../../middleware/auth';
 import { prisma } from '../../prisma';
+import { createSave, SaveResult } from './saves.service';
 
 export const savesRouter = Router();
+
+export function serializeSave(save: SaveResult) {
+  return { id: save.id, place_id: save.placeId, saved_at: save.savedAt };
+}
 
 savesRouter.post('/', requireAuth, async (req: AuthedRequest, res) => {
   const parsed = z.object({ place_id: z.string() }).safeParse(req.body);
@@ -20,14 +25,9 @@ savesRouter.post('/', requireAuth, async (req: AuthedRequest, res) => {
     return;
   }
 
-  const existing = await prisma.save.findUnique({ where: { placeId_userId: { placeId, userId } } });
-  if (existing) {
-    res.status(200).json({ id: existing.id, place_id: existing.placeId, saved_at: existing.savedAt });
-    return;
-  }
-
-  const save = await prisma.save.create({ data: { placeId, userId } });
-  res.status(201).json({ id: save.id, place_id: save.placeId, saved_at: save.savedAt });
+  const alreadyExisted = await prisma.save.findUnique({ where: { placeId_userId: { placeId, userId } } });
+  const save = await createSave(userId, placeId);
+  res.status(alreadyExisted ? 200 : 201).json(serializeSave(save));
 });
 
 savesRouter.delete('/:id', requireAuth, async (req: AuthedRequest, res) => {

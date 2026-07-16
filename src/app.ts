@@ -5,6 +5,7 @@ import { logsRouter } from './modules/logs/logs.routes';
 import { placesRouter } from './modules/places/places.routes';
 import { preferencesRouter } from './modules/preferences/preferences.routes';
 import { savesRouter } from './modules/saves/saves.routes';
+import { tripsRouter } from './modules/trips/trips.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -20,6 +21,7 @@ export function createApp(): Express {
   app.use('/places', placesRouter);
   app.use('/logs', logsRouter);
   app.use('/saves', savesRouter);
+  app.use('/trips', tripsRouter);
 
   return app;
 }

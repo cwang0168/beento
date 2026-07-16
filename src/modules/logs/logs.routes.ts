@@ -3,11 +3,12 @@ import { z } from 'zod';
 import { AuthedRequest, requireAuth } from '../../middleware/auth';
 import { prisma } from '../../prisma';
 import { categoryEnum } from '../../shared/categories';
-import { applyComparison, initialBounds, midpointIndex } from './ranking';
+import { createLog, LogResult } from './logs.service';
+import { applyComparison, midpointIndex } from './ranking';
 
 export const logsRouter = Router();
 
-function serializeLog(log: { id: string; placeId: string; rankPosition: number | null }) {
+export function serializeLog(log: LogResult) {
   return {
     id: log.id,
     place_id: log.placeId,
@@ -24,7 +25,6 @@ logsRouter.post('/', requireAuth, async (req: AuthedRequest, res) => {
     return;
   }
   const { place_id: placeId } = parsed.data;
-  const userId = req.userId!;
 
   const place = await prisma.place.findUnique({ where: { id: placeId } });
   if (!place) {
@@ -32,31 +32,11 @@ logsRouter.post('/', requireAuth, async (req: AuthedRequest, res) => {
     return;
   }
 
+  const userId = req.userId!;
   // Duplicate Log on the same place+user is a no-op, not an error (NFR error handling).
-  const existing = await prisma.log.findUnique({
-    where: { placeId_userId: { placeId, userId } },
-  });
-  if (existing) {
-    res.status(200).json(serializeLog(existing));
-    return;
-  }
-
-  const existingResolvedCount = await prisma.log.count({
-    where: { userId, rankPosition: { not: null }, place: { category: place.category } },
-  });
-  const bounds = initialBounds(existingResolvedCount);
-
-  const log = await prisma.log.create({
-    data: {
-      placeId,
-      userId,
-      rankPosition: bounds === null ? 1 : null,
-      rankLow: bounds?.low ?? null,
-      rankHigh: bounds?.high ?? null,
-    },
-  });
-
-  res.status(201).json(serializeLog(log));
+  const alreadyExisted = await prisma.log.findUnique({ where: { placeId_userId: { placeId, userId } } });
+  const log = await createLog(userId, placeId);
+  res.status(alreadyExisted ? 200 : 201).json(serializeLog(log));
 });
 
 // Returns the current binary-insertion comparison target (FR-7).
