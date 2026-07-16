@@ -98,6 +98,10 @@ describe('ranking flow (rank-candidates + rank)', () => {
 
     const result = await resolveRankingAlwaysWinning(app, token, placeB, logB.body.id);
     expect(result.rank_position).toBe(1);
+    // Regression guard: the resolved-comparison response previously omitted
+    // place_id (only the not-yet-resolved response included it), which
+    // silently broke iOS clients whose LogResponse model requires it.
+    expect(result.place_id).toBe(placeB);
 
     const list = await request(app).get('/logs').query({ category: 'restaurant' }).set('Authorization', `Bearer ${token}`);
     expect(list.body.map((l: { id: string }) => l.id)).toEqual([logB.body.id, logA.body.id]);

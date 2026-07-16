@@ -138,7 +138,7 @@ logsRouter.post('/:id/rank', requireAuth, async (req: AuthedRequest, res) => {
       }),
     ]);
 
-    res.json({ id: inProgress.id, rank_position: finalPosition, needs_ranking: false });
+    res.json(serializeLog({ id: inProgress.id, placeId: inProgress.placeId, rankPosition: finalPosition }));
     return;
   }
 
