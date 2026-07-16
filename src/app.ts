@@ -1,7 +1,9 @@
 import cors from 'cors';
 import express, { Express } from 'express';
 import { authRouter } from './modules/auth/auth.routes';
+import { libraryRouter } from './modules/library/library.routes';
 import { logsRouter } from './modules/logs/logs.routes';
+import { mapRouter } from './modules/map/map.routes';
 import { placesRouter } from './modules/places/places.routes';
 import { preferencesRouter } from './modules/preferences/preferences.routes';
 import { savesRouter } from './modules/saves/saves.routes';
@@ -22,6 +24,8 @@ export function createApp(): Express {
   app.use('/logs', logsRouter);
   app.use('/saves', savesRouter);
   app.use('/trips', tripsRouter);
+  app.use('/map', mapRouter);
+  app.use('/library', libraryRouter);
 
   return app;
 }
