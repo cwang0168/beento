@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { AuthedRequest, requireAuth } from '../../middleware/auth';
+import { requireCronSecret } from '../../middleware/cronAuth';
 import { createLog } from '../logs/logs.service';
 import { serializeLog } from '../logs/logs.routes';
 import { prisma } from '../../prisma';
@@ -332,8 +333,10 @@ tripsRouter.get('/:id/comparison', requireAuth, async (req: AuthedRequest, res) 
 
 // FR-33 remainder: internal/cron-triggered fan-out. Finds each
 // account-holding, accepted co-traveler with Places still unlogged.
-// Lapsed (never-accepted) invitees receive nothing, by design.
-tripsRouter.post('/:id/prompt/notify', async (req, res) => {
+// Lapsed (never-accepted) invitees receive nothing, by design. Gated by a
+// shared secret (Cloud Scheduler sends it as a header) rather than a user
+// token, since nothing here is scoped to a signed-in user.
+tripsRouter.post('/:id/prompt/notify', requireCronSecret, async (req, res) => {
   const trip = await prisma.trip.findUnique({
     where: { id: req.params.id },
     include: { coTravelers: true },

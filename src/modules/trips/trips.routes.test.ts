@@ -291,7 +291,9 @@ describe('POST /trips/:id/prompt/notify (FR-33 remainder)', () => {
     const place = await createPlace(owner.token, 'Time Out Market');
     await request(app).post(`/trips/${trip.id}/places`).set('Authorization', `Bearer ${owner.token}`).send({ place_id: place });
 
-    const res = await request(app).post(`/trips/${trip.id}/prompt/notify`);
+    const res = await request(app)
+      .post(`/trips/${trip.id}/prompt/notify`)
+      .set('x-cron-secret', process.env.CRON_SECRET!);
     expect(res.status).toBe(200);
     expect(res.body.notified).toEqual([{ user_id: friendUser.id, pending_place_count: 1 }]);
   });
@@ -305,7 +307,23 @@ describe('POST /trips/:id/prompt/notify (FR-33 remainder)', () => {
     const place = await createPlace(owner.token, 'Time Out Market');
     await request(app).post(`/trips/${trip.id}/places`).set('Authorization', `Bearer ${owner.token}`).send({ place_id: place });
 
-    const res = await request(app).post(`/trips/${trip.id}/prompt/notify`);
+    const res = await request(app)
+      .post(`/trips/${trip.id}/prompt/notify`)
+      .set('x-cron-secret', process.env.CRON_SECRET!);
     expect(res.body.notified).toEqual([]);
+  });
+
+  it('401s without the cron secret header', async () => {
+    const owner = await createTestUser(app);
+    const trip = await createTrip(owner.token, { start_date: '2020-01-01', end_date: '2020-01-05' });
+    const res = await request(app).post(`/trips/${trip.id}/prompt/notify`);
+    expect(res.status).toBe(401);
+  });
+
+  it('401s with the wrong cron secret', async () => {
+    const owner = await createTestUser(app);
+    const trip = await createTrip(owner.token, { start_date: '2020-01-01', end_date: '2020-01-05' });
+    const res = await request(app).post(`/trips/${trip.id}/prompt/notify`).set('x-cron-secret', 'wrong-secret');
+    expect(res.status).toBe(401);
   });
 });

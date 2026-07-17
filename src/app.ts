@@ -6,6 +6,7 @@ import { connectionsRouter } from './modules/connections/connections.routes';
 import { libraryRouter } from './modules/library/library.routes';
 import { logsRouter } from './modules/logs/logs.routes';
 import { mapRouter } from './modules/map/map.routes';
+import { authLimiter, generalApiLimiter } from './middleware/rateLimit';
 import { peopleRouter } from './modules/people/people.routes';
 import { placesRouter } from './modules/places/places.routes';
 import { preferencesRouter } from './modules/preferences/preferences.routes';
@@ -26,7 +27,11 @@ export function createApp(): Express {
     res.json({ status: 'ok' });
   });
 
-  app.use('/auth', authRouter);
+  // General backstop applies to everything registered after this point;
+  // /health above stays exempt for uptime probes.
+  app.use(generalApiLimiter);
+
+  app.use('/auth', authLimiter, authRouter);
   app.use('/me/preferences', preferencesRouter);
   app.use('/me/profile', profileRouter);
   app.use('/places', placesRouter);

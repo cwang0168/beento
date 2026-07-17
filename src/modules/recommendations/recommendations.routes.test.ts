@@ -77,3 +77,20 @@ describe('GET /recommendations', () => {
     expect(res.body.recommendations).toHaveLength(0);
   });
 });
+
+describe('POST /recommendations/refresh', () => {
+  it('401s without the cron secret header', async () => {
+    const res = await request(app).post('/recommendations/refresh');
+    expect(res.status).toBe(401);
+  });
+
+  it('401s with the wrong cron secret', async () => {
+    const res = await request(app).post('/recommendations/refresh').set('x-cron-secret', 'wrong-secret');
+    expect(res.status).toBe(401);
+  });
+
+  it('runs the batch when the correct cron secret is provided', async () => {
+    const res = await request(app).post('/recommendations/refresh').set('x-cron-secret', process.env.CRON_SECRET!);
+    expect(res.status).toBe(204);
+  });
+});

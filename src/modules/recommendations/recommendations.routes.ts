@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { AuthedRequest, requireAuth } from '../../middleware/auth';
+import { requireCronSecret } from '../../middleware/cronAuth';
 import { prisma } from '../../prisma';
 import { runSimilarityBatch } from './similarityBatch';
 
@@ -52,9 +53,9 @@ recommendationsRouter.get('/', requireAuth, async (req: AuthedRequest, res) => {
 });
 
 // Internal/cron-triggered -- recomputes the whole similarity cache. Not
-// part of the mobile-facing API surface (no requireAuth), same pattern as
-// the Phase 2 post-trip notify endpoint.
-recommendationsRouter.post('/refresh', async (_req, res) => {
+// part of the mobile-facing API surface (no user token exists here),
+// gated by a shared secret instead (Cloud Scheduler sends it as a header).
+recommendationsRouter.post('/refresh', requireCronSecret, async (_req, res) => {
   await runSimilarityBatch();
   res.status(204).send();
 });
