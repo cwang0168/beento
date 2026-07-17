@@ -1,5 +1,7 @@
+import * as Sentry from '@sentry/node';
 import cors from 'cors';
 import express, { Express } from 'express';
+import { jsonErrorHandler } from './middleware/errorHandler';
 import { authRouter } from './modules/auth/auth.routes';
 import { blocksRouter } from './modules/blocks/blocks.routes';
 import { connectionsRouter } from './modules/connections/connections.routes';
@@ -49,6 +51,13 @@ export function createApp(): Express {
   app.use('/people', peopleRouter);
   app.use('/users', usersRouter);
   app.use('/recommendations', recommendationsRouter);
+
+  // Reports anything passed to next(err) to Sentry (a no-op when
+  // SENTRY_DSN is unset -- see instrument.ts), then falls through to the
+  // JSON handler below so callers always get a real response instead of
+  // Express's default HTML error page.
+  Sentry.setupExpressErrorHandler(app);
+  app.use(jsonErrorHandler);
 
   return app;
 }
