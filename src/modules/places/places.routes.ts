@@ -4,6 +4,7 @@ import { AuthedRequest, requireAuth } from '../../middleware/auth';
 import { prisma } from '../../prisma';
 import { canView } from '../permissions/permissions.service';
 import { categoryEnum } from '../../shared/categories';
+import { searchGooglePlaces } from './googlePlaces.client';
 import { haversineDistanceKm } from './places.service';
 
 const createPlaceSchema = z.object({
@@ -28,7 +29,7 @@ placesRouter.get('/search', requireAuth, async (req: AuthedRequest, res) => {
   }
   const category = categoryParam as z.infer<typeof categoryEnum> | undefined;
 
-  const places = await prisma.place.findMany({
+  const localPlaces = await prisma.place.findMany({
     where: {
       ...(q ? { name: { contains: q, mode: 'insensitive' as const } } : {}),
       ...(category ? { category } : {}),
@@ -37,6 +38,39 @@ placesRouter.get('/search', requireAuth, async (req: AuthedRequest, res) => {
   });
 
   const hasOrigin = lat !== undefined && lng !== undefined && !Number.isNaN(lat) && !Number.isNaN(lng);
+
+  // Broadens the catalog beyond what's already been logged/created locally.
+  // No-op without GOOGLE_PLACES_API_KEY configured (see googlePlaces.client.ts).
+  // Only runs on an actual text query -- there's nothing to text-search
+  // for a category-only browse.
+  const knownExternalIds = new Set(localPlaces.map((p) => p.externalId).filter((id): id is string => id !== null));
+  let mergedPlaces = localPlaces;
+  if (q) {
+    const googleResults = await searchGooglePlaces(q, hasOrigin ? { lat: lat as number, lng: lng as number } : undefined);
+    const newResults = googleResults.filter(
+      (result) => !knownExternalIds.has(result.externalId) && (!category || result.category === category),
+    );
+    if (newResults.length > 0) {
+      const created = await Promise.all(
+        newResults.map((result) =>
+          prisma.place.upsert({
+            where: { externalId: result.externalId },
+            update: {},
+            create: {
+              name: result.name,
+              category: result.category,
+              lat: result.lat,
+              lng: result.lng,
+              source: 'google_places',
+              externalId: result.externalId,
+            },
+          }),
+        ),
+      );
+      mergedPlaces = [...localPlaces, ...created];
+    }
+  }
+  const places = mergedPlaces;
   const ranked = hasOrigin
     ? places
         .map((place) => ({

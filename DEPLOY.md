@@ -68,8 +68,10 @@ openssl rand -base64 32 | gcloud secrets create beento-cron-secret --data-file=-
 # Get a DSN from your Sentry project's Settings -> Client Keys (DSN).
 echo -n "$SENTRY_DSN" | gcloud secrets create beento-sentry-dsn --data-file=-
 
-# Optional -- only once Google Places is wired in (task #20).
-# echo -n "$GOOGLE_PLACES_API_KEY" | gcloud secrets create beento-places-api-key --data-file=-
+# From Google Cloud Console -> APIs & Services -> Credentials, for a key with
+# the Places API (New) enabled. Places search (GET /places/search) falls back
+# to local-DB-only results without this -- see googlePlaces.client.ts.
+echo -n "$GOOGLE_PLACES_API_KEY" | gcloud secrets create beento-places-api-key --data-file=-
 ```
 
 Edit the `beento-database-url` secret's `REPLACE_WITH_DB_PASSWORD` to the
@@ -115,7 +117,7 @@ gcloud run deploy beento-backend \
   --platform=managed \
   --allow-unauthenticated \
   --add-cloudsql-instances="$INSTANCE_CONNECTION_NAME" \
-  --set-secrets="DATABASE_URL=beento-database-url:latest,JWT_SECRET=beento-jwt-secret:latest,CRON_SECRET=beento-cron-secret:latest,SENTRY_DSN=beento-sentry-dsn:latest" \
+  --set-secrets="DATABASE_URL=beento-database-url:latest,JWT_SECRET=beento-jwt-secret:latest,CRON_SECRET=beento-cron-secret:latest,SENTRY_DSN=beento-sentry-dsn:latest,GOOGLE_PLACES_API_KEY=beento-places-api-key:latest" \
   --min-instances=0 \
   --max-instances=10
 ```

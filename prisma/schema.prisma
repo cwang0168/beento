@@ -17,6 +17,7 @@ enum PlaceCategory {
 enum PlaceSource {
   user_created
   seed
+  google_places
 }
 
 enum TripCoTravelerInviteStatus {
@@ -78,6 +79,9 @@ model Place {
   lat         Float
   lng         Float
   source      PlaceSource
+  // Google Places' place id, for de-duping repeated searches -- null for
+  // user_created/seed places that never came from the provider.
+  externalId  String?       @unique
   createdBy   User?         @relation("PlaceCreatedBy", fields: [createdById], references: [id])
   createdById String?
   createdAt   DateTime      @default(now())

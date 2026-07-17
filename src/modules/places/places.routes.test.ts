@@ -1,5 +1,6 @@
 import request from 'supertest';
 import { createApp } from '../../app';
+import { config } from '../../config';
 import { prisma } from '../../prisma';
 import { resetDatabase } from '../../test/db';
 import { createTestUser } from '../../test/helpers';
@@ -148,6 +149,68 @@ describe('GET /places/search', () => {
       { user_id: friendUser.id, type: 'log', rank_position: 1 },
     ]);
     expect(res.body[1].connection_activity).toEqual([]);
+  });
+});
+
+describe('GET /places/search with GOOGLE_PLACES_API_KEY configured', () => {
+  const originalKey = config.googlePlacesApiKey;
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    config.googlePlacesApiKey = originalKey;
+    global.fetch = originalFetch;
+  });
+
+  it('materializes a new Google result as a local Place and includes it in results', async () => {
+    config.googlePlacesApiKey = 'test-key';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        places: [
+          {
+            id: 'ChIJ-timeout',
+            displayName: { text: 'Time Out Market' },
+            location: { latitude: 38.7069, longitude: -9.1459 },
+            types: ['restaurant'],
+          },
+        ],
+      }),
+    }) as unknown as typeof fetch;
+
+    const { token } = await createTestUser(app);
+    const res = await request(app).get('/places/search').query({ q: 'Time Out' }).set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({ name: 'Time Out Market', category: 'restaurant', source: 'google_places' });
+
+    const stored = await prisma.place.findUniqueOrThrow({ where: { externalId: 'ChIJ-timeout' } });
+    expect(stored.name).toBe('Time Out Market');
+  });
+
+  it('does not duplicate a Google result already materialized locally', async () => {
+    config.googlePlacesApiKey = 'test-key';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        places: [
+          {
+            id: 'ChIJ-timeout',
+            displayName: { text: 'Time Out Market' },
+            location: { latitude: 38.7069, longitude: -9.1459 },
+            types: ['restaurant'],
+          },
+        ],
+      }),
+    }) as unknown as typeof fetch;
+
+    const { token } = await createTestUser(app);
+    await request(app).get('/places/search').query({ q: 'Time Out' }).set('Authorization', `Bearer ${token}`);
+    const res = await request(app).get('/places/search').query({ q: 'Time Out' }).set('Authorization', `Bearer ${token}`);
+
+    expect(res.body).toHaveLength(1);
+    const count = await prisma.place.count({ where: { externalId: 'ChIJ-timeout' } });
+    expect(count).toBe(1);
   });
 });
 
