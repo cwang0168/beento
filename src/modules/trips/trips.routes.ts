@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { AuthedRequest, requireAuth } from '../../middleware/auth';
 import { requireCronSecret } from '../../middleware/cronAuth';
@@ -331,6 +332,27 @@ tripsRouter.get('/:id/comparison', requireAuth, async (req: AuthedRequest, res) 
   res.json({ trip_id: trip.id, places });
 });
 
+type TripWithCoTravelers = Prisma.TripGetPayload<{ include: { coTravelers: true } }>;
+
+async function computeNotifications(trip: TripWithCoTravelers): Promise<Array<{ user_id: string; pending_place_count: number }>> {
+  const tripPlaces = await prisma.tripPlace.findMany({ where: { tripId: trip.id } });
+  const placeIds = tripPlaces.map((tp) => tp.placeId);
+  const eligible = trip.coTravelers.filter((ct) => ct.inviteStatus === 'accepted' && ct.userId !== null);
+
+  const notified: Array<{ user_id: string; pending_place_count: number }> = [];
+  for (const coTraveler of eligible) {
+    const existingLogs = await prisma.log.findMany({
+      where: { userId: coTraveler.userId!, placeId: { in: placeIds } },
+    });
+    const loggedIds = new Set(existingLogs.map((log) => log.placeId));
+    const pendingCount = placeIds.filter((id) => !loggedIds.has(id)).length;
+    if (pendingCount > 0) {
+      notified.push({ user_id: coTraveler.userId!, pending_place_count: pendingCount });
+    }
+  }
+  return notified;
+}
+
 // FR-33 remainder: internal/cron-triggered fan-out. Finds each
 // account-holding, accepted co-traveler with Places still unlogged.
 // Lapsed (never-accepted) invitees receive nothing, by design. Gated by a
@@ -350,20 +372,29 @@ tripsRouter.post('/:id/prompt/notify', requireCronSecret, async (req, res) => {
     return;
   }
 
-  const tripPlaces = await prisma.tripPlace.findMany({ where: { tripId: trip.id } });
-  const placeIds = tripPlaces.map((tp) => tp.placeId);
-  const eligible = trip.coTravelers.filter((ct) => ct.inviteStatus === 'accepted' && ct.userId !== null);
+  const notified = await computeNotifications(trip);
+  res.json({ trip_id: trip.id, notified });
+});
 
-  const notified = [];
-  for (const coTraveler of eligible) {
-    const existingLogs = await prisma.log.findMany({
-      where: { userId: coTraveler.userId!, placeId: { in: placeIds } },
-    });
-    const loggedIds = new Set(existingLogs.map((log) => log.placeId));
-    const pendingCount = placeIds.filter((id) => !loggedIds.has(id)).length;
-    if (pendingCount > 0) {
-      notified.push({ user_id: coTraveler.userId, pending_place_count: pendingCount });
+// A scheduler can only hit one fixed URL, and there was no way for it to
+// discover which trip IDs need the per-trip endpoint above -- this finds
+// Trips that ended within the last 24h and fans out to all of them in one
+// call. Restricted to a 24h window (not "every ended trip") so a daily
+// schedule doesn't re-notify about trips that ended long ago each run.
+tripsRouter.post('/prompt/notify-all', requireCronSecret, async (_req, res) => {
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const trips = await prisma.trip.findMany({
+    where: { endDate: { gte: windowStart, lte: now } },
+    include: { coTravelers: true },
+  });
+
+  const results = [];
+  for (const trip of trips) {
+    const notified = await computeNotifications(trip);
+    if (notified.length > 0) {
+      results.push({ trip_id: trip.id, notified });
     }
   }
-  res.json({ trip_id: trip.id, notified });
+  res.json({ trips_processed: trips.length, results });
 });

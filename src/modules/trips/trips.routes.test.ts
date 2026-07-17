@@ -327,3 +327,51 @@ describe('POST /trips/:id/prompt/notify (FR-33 remainder)', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('POST /trips/prompt/notify-all (FR-33 cron fan-out)', () => {
+  it('notifies for trips that ended within the last 24h and skips older ones', async () => {
+    const owner = await createTestUser(app);
+    const friend = await createTestUser(app);
+    const friendUser = await prisma.user.findUniqueOrThrow({ where: { username: friend.username } });
+
+    const recentEnd = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const recentTrip = await createTrip(owner.token, { start_date: '2020-01-01', end_date: recentEnd });
+    await prisma.tripCoTraveler.create({
+      data: { tripId: recentTrip.id, userId: friendUser.id, inviteStatus: 'accepted' },
+    });
+    const place = await createPlace(owner.token, 'Time Out Market');
+    await request(app)
+      .post(`/trips/${recentTrip.id}/places`)
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({ place_id: place });
+
+    const oldTrip = await createTrip(owner.token, { start_date: '2020-01-01', end_date: '2020-01-05' });
+    await prisma.tripCoTraveler.create({
+      data: { tripId: oldTrip.id, userId: friendUser.id, inviteStatus: 'accepted' },
+    });
+    const oldPlace = await createPlace(owner.token, 'Old Place');
+    await request(app)
+      .post(`/trips/${oldTrip.id}/places`)
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({ place_id: oldPlace });
+
+    const res = await request(app)
+      .post('/trips/prompt/notify-all')
+      .set('x-cron-secret', process.env.CRON_SECRET!);
+
+    expect(res.status).toBe(200);
+    expect(res.body.results).toEqual([
+      { trip_id: recentTrip.id, notified: [{ user_id: friendUser.id, pending_place_count: 1 }] },
+    ]);
+  });
+
+  it('401s without the cron secret header', async () => {
+    const res = await request(app).post('/trips/prompt/notify-all');
+    expect(res.status).toBe(401);
+  });
+
+  it('401s with the wrong cron secret', async () => {
+    const res = await request(app).post('/trips/prompt/notify-all').set('x-cron-secret', 'wrong-secret');
+    expect(res.status).toBe(401);
+  });
+});
