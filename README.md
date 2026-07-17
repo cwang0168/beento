@@ -19,3 +19,7 @@ npm test
 ```
 
 Integration tests run against the same local Postgres (docker-compose), not mocks — bring it up first.
+
+## Deploying
+
+See `DEPLOY.md` for Cloud Run / Cloud SQL / Cloud Scheduler setup.
