@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/node';
 import cors from 'cors';
 import express, { Express } from 'express';
 import { jsonErrorHandler } from './middleware/errorHandler';
+import { accountRouter } from './modules/account/account.routes';
 import { authRouter } from './modules/auth/auth.routes';
 import { blocksRouter } from './modules/blocks/blocks.routes';
 import { connectionsRouter } from './modules/connections/connections.routes';
@@ -36,6 +37,7 @@ export function createApp(): Express {
   app.use('/auth', authLimiter, authRouter);
   app.use('/me/preferences', preferencesRouter);
   app.use('/me/profile', profileRouter);
+  app.use('/me', accountRouter);
   app.use('/places', placesRouter);
   app.use('/logs', logsRouter);
   app.use('/saves', savesRouter);
